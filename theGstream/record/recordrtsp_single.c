@@ -1,4 +1,8 @@
 #include <gst/gst.h>
+#include <time.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
 
 static GMainLoop *loop;
 
@@ -6,10 +10,9 @@ static GMainLoop *loop;
 typedef struct _CustomData {
   GstElement *pipeline;
   GstElement *rtspsrc;
-  GstElement *queue, *queue0, *queue1;
-  GstElement *capsfilter0, *capsfilter1;
-  GstElement *rtph264depay0, *rtph264depay1;
-  GstElement *h264parse0, *h264parse1;
+  GstElement *capsfilter;
+  GstElement *rtph264depay;
+  GstElement *h264parse;
   GstElement *matroskamux;
   GstElement *filesink;
 } CustomData;
@@ -37,73 +40,74 @@ int main(int argc, char *argv[]) {
   GstStateChangeReturn ret;
   gboolean terminate = FALSE;
 
-  /* Timestamp stuff for filename */
-  char filename[21];
+  /* Get path of current directory */
+  char cwd[128];
+  if (getcwd(cwd, sizeof(cwd)) != NULL)
+    fprintf(stdout, "Current working dir: %s\n", cwd);
+  else
+    perror("---getcwd() error");
+
+  /*Time stamp stuff */
+  char tstamp[32];
   struct tm *timenow;
   time_t now = time(NULL);
   timenow = gmtime(&now);
-  strftime(filename, sizeof(filename), "%Y-%m-%d_%H:%M:%S", timenow);
-  //puts(filename);
+  if (strftime(tstamp, sizeof(tstamp), "%Y-%m-%d_%H:%M:%S", timenow) != '\0')
+    fprintf(stdout, "TIME be: %s\n", tstamp);
+  else
+    perror("---strftime error");
+
+  char *filename = NULL;
+  filename = g_strconcat (cwd, "/clips/", tstamp, ".mkv", NULL);
+  fprintf(stdout, "FILENAME be: %s\n", filename);
 
   /* Initialize GStreamer */
   gst_init (&argc, &argv);
 
   /* Create the pipelines elements */
   data.rtspsrc = gst_element_factory_make ("rtspsrc", "rtspsrc");
-  //data.queue0 = gst_element_factory_make ("queue0", "queue0");
-  data.queue1 = gst_element_factory_make ("queue", "queue");
-  data.capsfilter0 = gst_element_factory_make ("capsfilter0", "capsfilter0");
-  data.capsfilter1 = gst_element_factory_make ("capsfilter1", "capsfilter1");
-  data.rtph264depay0 = gst_element_factory_make ("rtph264depay0", "rtph264depay0");
-  data.rtph264depay1 = gst_element_factory_make ("rtph264depay1", "rtph264depay1");
-  data.h264parse0 = gst_element_factory_make ("h264parse0", "h264parse0");
-  data.h264parse1 = gst_element_factory_make ("h264parse1", "h264parse1");
+  data.capsfilter = gst_element_factory_make ("capsfilter", "capsfilter");
+  data.rtph264depay = gst_element_factory_make ("rtph264depay", "rtph264depay");
+  data.h264parse = gst_element_factory_make ("h264parse", "h264parse");
   data.matroskamux = gst_element_factory_make ("matroskamux", "matroskamux");
   data.filesink = gst_element_factory_make ("filesink", "filesink");
 
   /* Create the empty pipeline */
   data.pipeline = gst_pipeline_new ("test-pipeline");
 
+  // !data.capsfilter ||
   /* Check the elements validity */
-  if ( !data.pipeline || !data.rtspsrc ) {
-    g_printerr ("An element in PIPELINE/SRC group could not be created.\n"); return -1;
-  } else if ( !data.queue ) {
-    g_printerr ("An element in QUEUE group could not be created.\n"); return -1;
-  } else if ( !data.capsfilter0 || !data.capsfilter1 ) {
-    g_printerr ("An element in CAPSFILTER group could not be created.\n"); return -1;
-  } else if ( !data.rtph264depay0 || !data.rtph264depay1 || !data.h264parse0 || !data.h264parse1 ) {
-      g_printerr ("An element in DEPAY/PARSE group could not be created.\n"); return -1;
-  } else if ( !data.matroskamux || !data.filesink ) {
-      g_printerr ("An element in MUX/SINK group could not be created.\n"); return -1;
+  if (!data.pipeline || !data.rtspsrc || !data.matroskamux || !data.rtph264depay || !data.h264parse || !data.filesink ) {
+    g_printerr ("Not all elements could be created.\n");
+    return -1;
   } else {
-    g_printerr ("--All elements were created equally.\n");
+    g_printerr ("\n --All elements was created equally.\n");
   }
 
   /* Set parameters for some elements */
 	g_object_set(G_OBJECT(data.rtspsrc), "location", "rtsp://root:hest1234@192.168.130.203/axis-media/media.amp", "ntp-sync", TRUE, "protocols", 0x00000004, NULL);
-  g_object_set(G_OBJECT(data.rtspsrc), "location", "rtsp://root:hest1234@192.168.130.204/axis-media/media.amp", "ntp-sync", TRUE, "protocols", 0x00000004, NULL);
-  g_object_set(G_OBJECT(data.capsfilter0), "caps", gst_caps_from_string("application/x-rtp,media=video"), NULL);
-	g_object_set(G_OBJECT(data.capsfilter1), "caps", gst_caps_from_string("application/x-rtp,media=video"), NULL);
-  //g_object_set(G_OBJECT(data.matroskamux), "name", "mux", NULL);
-	g_object_set(G_OBJECT(data.filesink), "location", "/home/kim/projectOWL/gstreaming/clips/%s.mkv", filename, NULL);
+	g_object_set(G_OBJECT(data.capsfilter), "caps", gst_caps_from_string("application/x-rtp,media=video"), NULL);
+  g_printerr ("---capsfilter.\n");
+	g_object_set(G_OBJECT(data.filesink), "location", filename, NULL);
+  g_printerr ("---filesink.\n");
 
   /* Build the pipeline. Though not adding the src yet*/
   g_print ("---Adding elements to a bin ... \n");
-  gst_bin_add_many (GST_BIN (data.pipeline), data.rtspsrc, data.queue1, data.queue0, data.capsfilter1, data.capsfilter0, data.rtph264depay1, data.rtph264depay0, data.h264parse1, data.h264parse0, data.matroskamux, data.filesink, NULL);
+  gst_bin_add_many (GST_BIN (data.pipeline), data.rtspsrc, data.capsfilter, data.rtph264depay, data.h264parse, data.matroskamux, data.filesink, NULL);
 
   GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(data.pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipe_PAUSE");
 
   g_print ("---and linking them ... \n");
-  gst_element_link_many(data.rtspsrc, data.queue1, NULL);
-  g_signal_connect(data.rtspsrc, "pad-added", G_CALLBACK (on_pad_added), data.queue1);
-  if (!gst_element_link_many(data.queue0, data.capsfilter0, data.rtph264depay0, data.h264parse0, data.matroskamux, NULL))
-    g_error("---Failed to link convert pipe 0!");
-  if (!gst_element_link_many(data.queue1, data.capsfilter1, data.rtph264depay1, data.h264parse1, data.matroskamux, NULL))
-    g_error("---Failed to link convert pipe 1!");
+  gst_element_link_many(data.rtspsrc, data.capsfilter, NULL);
+  g_signal_connect(data.rtspsrc, "pad-added", G_CALLBACK (on_pad_added), data.capsfilter);
+  if (!gst_element_link_many(data.capsfilter, data.rtph264depay, NULL))
+		g_error("Failed to link rtph264depay to h264parse!");
+  if (!gst_element_link_many(data.rtph264depay, data.h264parse, NULL))
+		g_error("Failed to link rtph264depay to h264parse!");
+  if (!gst_element_link_many(data.h264parse, data.matroskamux, NULL))
+    g_error("Failed to link h264parse to matroskamux!");
   if (!gst_element_link_many(data.matroskamux, data.filesink, NULL))
-    g_error("Failed to link matroskamux_0 to filesink!");
-  if (!gst_element_link_many(data.matroskamux, data.filesink, NULL))
-    g_error("Failed to link matroskamux_1 to filesink!");
+    g_error("Failed to link matroskamux to filesink!");
 
   /* Start playing */
   ret = gst_element_set_state (data.pipeline, GST_STATE_PLAYING);
@@ -172,6 +176,52 @@ int main(int argc, char *argv[]) {
   return 0;
 
   //GST_DEBUG_BIN_TO_DOT_FILE(data.pipeline, GST_DEBUG_GRAPH_SHOW_ALL, "test-pipeline");
+}
+
+/* This function will be called by the pad-added signal */
+static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *data) {
+  GstPad *sink_pad = gst_element_get_static_pad (data->filesink, "sink");
+  GstPadLinkReturn ret;
+  GstCaps *new_pad_caps = NULL;
+  GstStructure *new_pad_struct = NULL;
+  const gchar *new_pad_type = NULL;
+
+  g_print ("\nReceived new pad '%s' from '%s':\n", GST_PAD_NAME (new_pad), GST_ELEMENT_NAME (src));
+
+  /* If our converter is already linked, we have nothing to do here */
+  if (gst_pad_is_linked (sink_pad)) {
+    g_print ("  We are already linked. Ignoring.\n");
+    goto exit;
+  }
+
+  /* Check the new pad's type */
+  new_pad_caps = gst_pad_query_caps (new_pad, NULL);
+  new_pad_struct = gst_caps_get_structure (new_pad_caps, 0);
+  new_pad_type = gst_structure_get_name (new_pad_struct);
+  g_print ("new_pad_caps type is '%s'.\n", new_pad_caps);
+  g_print ("new_pad_struct type is '%s'.\n", new_pad_struct);
+  g_print ("new_pad_caps type is '%s'.\n", new_pad_type);
+
+/*  if (!g_str_has_prefix (new_pad_type, "audio/x-raw")) {
+    g_print ("  It has type '%s' which is not raw audio. Ignoring.\n", new_pad_type);
+    goto exit;
+  }
+*/
+  /* Attempt the link */
+  ret = gst_pad_link (new_pad, sink_pad);
+  if (GST_PAD_LINK_FAILED (ret)) {
+    g_print ("  Type is '%s' but link failed.\n", new_pad_type);
+  } else {
+    g_print ("  Link succeeded (type '%s').\n", new_pad_type);
+  }
+
+exit:
+  /* Unreference the new pad's caps, if we got them */
+  if (new_pad_caps != NULL)
+    gst_caps_unref (new_pad_caps);
+
+  /* Unreference the sink pad */
+  gst_object_unref (sink_pad);
 }
 
 
