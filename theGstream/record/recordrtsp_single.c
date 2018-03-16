@@ -46,7 +46,6 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "Current working dir: %s\n", cwd);
   else
     perror("---getcwd() error");
-
   /*Time stamp stuff */
   char tstamp[32];
   struct tm *timenow;
@@ -56,7 +55,8 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "TIME be: %s\n", tstamp);
   else
     perror("---strftime error");
-
+  /* Connect into filename */
+  /* TODO: check if clips dir exists */
   char *filename = NULL;
   filename = g_strconcat (cwd, "/clips/", tstamp, ".mkv", NULL);
   fprintf(stdout, "FILENAME be: %s\n", filename);
